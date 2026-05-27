@@ -1,0 +1,62 @@
+# ============================================================
+# Channel Simulator configuration — B210 example
+#
+# This file EXTENDS Modulator_B210.yaml.
+# Paste the `channel_sim` block below into any existing
+# Modulator_*.yaml (or pass this file directly to ChannelSimulator).
+#
+# Hardware parameters (sample_rate, center_freq) are inherited
+# from the rest of the config and CANNOT be changed at runtime.
+# ============================================================
+
+# --- Copy these from your Modulator_B210.yaml ---
+sample_rate:  50000000      # Hz  (50 MHz) — read-only for the channel sim
+center_freq:  2400000000    # Hz  (2.4 GHz) — read-only for the channel sim
+
+# ============================================================
+# Channel Simulator block
+# ============================================================
+channel_sim:
+
+  # ── Radio I/O mode ──────────────────────────────────────
+  # zmq   : Software emulation — no hardware required.
+  #         Transmitter connects PUSH to rx_bind_addr;
+  #         receiver connects PULL to tx_bind_addr.
+  # usrp  : Hardware loopback — requires a dedicated USRP
+  #         physically cabled between TX and RX antennas.
+  mode: zmq
+
+  # ── UDP control port ────────────────────────────────────
+  # Separate from the modulator's control_port (default 9999).
+  # Send channel commands here using the SAME packet format
+  # as plot_sensing_fast.py:
+  #   struct.pack("!4s4si", b"CMD ", b"VEL ", int(vel * 100))
+  control_port: 9998
+
+  # ── I/Q buffer size (samples) ───────────────────────────
+  # Larger = lower per-buffer overhead; smaller = lower latency.
+  # At 50 MHz, 4096 samples ≈ 81.9 µs per block.
+  buffer_size: 4096
+
+  # ── Initial channel state ────────────────────────────────
+  # These can be changed at runtime via UDP commands.
+  init:
+    target_velocity:   0.0    # m/s  — 0 = static target (no Doppler)
+    target_distance:  100.0   # m    — informational (future: fractional delay)
+    micro_doppler_amp:  0.0   # rad  — 0 disables micro-Doppler modulation
+    micro_doppler_freq: 10.0  # Hz
+
+  # ── ZMQ endpoints (only used when mode: zmq) ────────────
+  zmq:
+    rx_bind_addr:    "tcp://*:5558"   # PULL — transmitter pushes samples here
+    tx_bind_addr:    "tcp://*:5559"   # PUSH — receiver pulls samples from here
+    recv_timeout_ms: 100              # ms timeout on recv (lets loop check SIGINT)
+
+  # ── USRP overrides (only used when mode: usrp) ──────────
+  # sample_rate and center_freq come from the top-level keys above.
+  usrp:
+    device_args: ""    # e.g. "addr=192.168.10.3"  (dedicated channel-emulator USRP)
+    rx_gain: 30.0      # dB
+    tx_gain: 30.0      # dB
+    rx_channel: 0
+    tx_channel: 0

@@ -1,0 +1,15 @@
+{
+  "name": "openisac-docs-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:readme": "python3 ../scripts/sync_docs_from_readme.py",
+    "dev": "npm run sync:readme && astro dev",
+    "build:astro": "astro build",
+    "build": "npm run sync:readme && astro build && python3 ../scripts/publish_docs_site.py",
+    "preview": "astro preview"
+  },
+  "devDependencies": {
+    "astro": "^6.1.3"
+  }
+}

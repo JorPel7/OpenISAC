@@ -1,0 +1,1704 @@
+% ─────────────────────────────────────────────────────────────────────────────
+%  OpenISAC – Extensión ZMQ Software-in-the-Loop
+%  Documento técnico: arquitectura, modelo de canal, cambios al código original
+%  y manual de uso paso a paso
+% ─────────────────────────────────────────────────────────────────────────────
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{geometry}
+\geometry{top=2.5cm, bottom=2.5cm, left=2.8cm, right=2.8cm}
+
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}
+\setmonofont{DejaVu Sans Mono}
+
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\tcbuselibrary{listings,skins,breakable}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{array}
+
+% ── Colores ──────────────────────────────────────────────────────────────────
+\definecolor{primary}{RGB}{0,82,147}
+\definecolor{secondary}{RGB}{230,240,255}
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codeborder}{RGB}{200,210,220}
+\definecolor{codegreen}{RGB}{40,140,40}
+\definecolor{codegray}{RGB}{100,100,100}
+\definecolor{codeblue}{RGB}{0,0,180}
+\definecolor{warnbg}{RGB}{255,248,220}
+\definecolor{warnborder}{RGB}{200,160,0}
+\definecolor{infobg}{RGB}{230,245,255}
+\definecolor{infoborder}{RGB}{0,120,200}
+\definecolor{mathbg}{RGB}{240,255,240}
+\definecolor{mathborder}{RGB}{30,160,30}
+
+% ── Estilo de código ──────────────────────────────────────────────────────────
+\lstdefinestyle{cpp}{
+  language=C++,
+  basicstyle=\scriptsize\ttfamily,
+  keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegreen}\itshape,
+  stringstyle=\color{primary},
+  numberstyle=\tiny\color{codegray},
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{codeborder},
+  breaklines=true,
+  numbers=left,
+  numbersep=8pt,
+  tabsize=4,
+  showstringspaces=false,
+  captionpos=b,
+  xleftmargin=1em,
+}
+
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\footnotesize\ttfamily,
+  keywordstyle=\color{codeblue}\bfseries,
+  commentstyle=\color{codegreen}\itshape,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{codeborder},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\lstdefinestyle{plain}{
+  basicstyle=\footnotesize\ttfamily,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{codeborder},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+% ── Cajas informativas ────────────────────────────────────────────────────────
+\newtcolorbox{infobox}[1][]{
+  colback=infobg, colframe=infoborder,
+  fonttitle=\bfseries, title=#1,
+  breakable, arc=3pt, boxrule=0.8pt
+}
+\newtcolorbox{warnbox}[1][]{
+  colback=warnbg, colframe=warnborder,
+  fonttitle=\bfseries, title=#1,
+  breakable, arc=3pt, boxrule=0.8pt
+}
+\newtcolorbox{mathbox}[1][]{
+  colback=mathbg, colframe=mathborder,
+  fonttitle=\bfseries, title=#1,
+  breakable, arc=3pt, boxrule=0.8pt
+}
+
+% ── Cabeceras ────────────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{primary}\textbf{OpenISAC — Extensión ZMQ Software-in-the-Loop}}
+\fancyhead[R]{\small\color{primary}\thepage}
+\fancyfoot[C]{\small\color{codegray}Documento técnico — fork\_OpenISAC · Mayo 2026}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{\thesection\quad}
+\titleformat{\subsection}{\normalsize\bfseries\color{primary!80}}{}{0em}{\thesubsection\quad}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{\thesubsubsection\quad}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Portada ───────────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{1.5cm}
+{\color{primary}\rule{\linewidth}{2pt}}\vspace{0.4cm}
+
+{\Huge\bfseries\color{primary} OpenISAC}\\[0.4cm]
+{\LARGE Extensión ZMQ Software-in-the-Loop}\\[0.3cm]
+{\large Canal ISAC simulado con interfaz TUI interactiva}\\[0.3cm]
+{\normalsize Documentación técnica: arquitectura, modelo de canal, cambios al código y manual de uso}
+
+\vspace{0.4cm}
+{\color{primary}\rule{\linewidth}{2pt}}
+
+\vspace{1.5cm}
+
+\begin{tcolorbox}[colback=secondary, colframe=primary, arc=5pt, boxrule=1pt]
+\centering
+\textbf{Resumen ejecutivo}\\[0.5em]
+\begin{flushleft}
+Este documento describe la extensión \textit{software-in-the-loop} (SIL) desarrollada sobre
+el proyecto de código abierto OpenISAC (disponible en GitHub). La extensión añade un modo de
+simulación via ZeroMQ (\texttt{--zmq}) que permite ejecutar la cadena completa
+TX $\rightarrow$ Canal $\rightarrow$ RX de procesado ISAC sin ningún hardware de radio (USRP),
+sustituyendo la interfaz SDR por dos herramientas de simulación:
+
+\begin{itemize}[leftmargin=1em,topsep=0pt]
+  \item \textbf{ChannelSimulator\_void}: canal transparente (pasa la señal sin modificar),
+        útil como referencia para verificar que no exista actividad cuando no hay objetos.
+  \item \textbf{ChannelSimulator}: canal radar monostático completo con retardo de rango,
+        desplazamiento Doppler, micro-Doppler, ecuación del radar y ruido AWGN, controlable
+        en tiempo real mediante una interfaz TUI (ncurses).
+\end{itemize}
+
+El documento incluye la formulación matemática rigurosa del modelo de canal, las referencias
+exactas al código que implementa cada efecto, y las instrucciones paso a paso para ejecutar
+el sistema tanto en modo hardware (USRP) como en modo simulado.
+\end{flushleft}
+\end{tcolorbox}
+
+\vspace{1.5cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Proyecto base}     & OpenISAC (fork) — \url{https://github.com/OpenISAC} \\
+\textbf{Lenguaje}          & C++17 \\
+\textbf{Build system}      & CMake $\geq$ 3.18 \\
+\textbf{Plataforma}        & Linux (Ubuntu 22.04+), kernel $\geq$ 5.15 \\
+\textbf{Dependencias SIL}  & ZeroMQ $\geq$ 4.3, cppzmq, ncurses, FFTW3 \\
+\textbf{Fecha}             & Mayo 2026 \\
+\bottomrule
+\end{tabular}
+
+\vfill
+{\small\color{codegray}
+Documento de referencia para publicación en congreso sobre ISAC.
+Generado con XeLaTeX — fork\_OpenISAC.
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introducción y motivación}
+
+OpenISAC~\footnote{\url{https://github.com/OpenISAC}} es una implementación de código abierto en C++ de un sistema
+ISAC (\textit{Integrated Sensing and Communications}) basado en OFDM
+(\textit{Orthogonal Frequency-Division Multiplexing}), diseñado para ejecutarse sobre
+hardware SDR (\textit{Software-Defined Radio}) de la familia USRP de Ettus Research /
+National Instruments.
+
+El proyecto original asume disponibilidad de hardware físico para \emph{cualquier}
+prueba del sistema, lo que impone restricciones importantes en entornos de desarrollo,
+validación de algoritmos y docencia:
+\begin{itemize}
+  \item La cadena de procesado ISAC completa no puede ejecutarse sin un USRP conectado.
+  \item No existe mecanismo para controlar los parámetros del canal (distancia, velocidad,
+        SNR) de forma reproducible entre experimentos.
+  \item La validación de los algoritmos de procesado radar (mapa Rango-Doppler, CFAR)
+        queda condicionada a la disponibilidad del entorno de medidas.
+\end{itemize}
+
+Esta extensión, denominada \textbf{ZMQ SIL} (\textit{Software-in-the-Loop}), resuelve
+estos problemas añadiendo:
+\begin{enumerate}
+  \item Un modo de transmisión ZMQ (\texttt{--zmq}) que sustituye la interfaz USRP por
+        sockets ZeroMQ PUSH/PULL, sin modificar la cadena de procesado.
+  \item Un canal simulado transparente (\texttt{ChannelSimulator\_void}) para obtener una
+        referencia sin efectos de canal.
+  \item Un canal simulado físico (\texttt{ChannelSimulator}) que implementa un modelo
+        radar monostático parametrizable en tiempo real.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Arquitectura del sistema completo}
+
+\subsection{Modos de operación}
+
+El sistema puede operar en dos modos mutuamente excluyentes:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Modo} & \textbf{Interfaz TX/RX} & \textbf{Casos de uso} \\
+\midrule
+Hardware (normal) & USRP via UHD & Experimentos OTA, medidas reales \\
+ZMQ SIL (\texttt{--zmq}) & ZeroMQ sockets & Desarrollo, validación, docencia \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Pipeline de señal en modo ZMQ SIL}
+
+\begin{center}
+\begin{tcolorbox}[colback=codebg, colframe=codeborder, arc=3pt, boxrule=0.8pt,
+                  title={\small\textbf{Figura 1 — Pipeline ZMQ SIL completo}}]
+\small
+% --- Fila 1: bloques TX y canal ---
+\begin{center}
+\begin{tabular}{ccc}
+\textbf{OFDMModulator} \texttt{--zmq} & & \textbf{ChannelSimulator} \\[4pt]
+\fbox{\begin{tabular}{c}LDPC encode\\OFDM IFFT\\CP insert\\(sin USRP)\end{tabular}}
+& $\xrightarrow{\quad\text{ZMQ PUSH :5558}\quad}$
+& \fbox{\begin{tabular}{c}Retardo $\tau$\\Doppler $f_d$\\Micro-Doppler\\Ec. Radar\\AWGN $w[n]$\end{tabular}}
+\end{tabular}
+\end{center}
+\vspace{4pt}
+\begin{center}
+$\Big\downarrow$ \small{ZMQ PUSH :5559}
+\end{center}
+\vspace{2pt}
+% --- Fila 2: bloque RX sensing y visualización ---
+\begin{center}
+\begin{tabular}{ccc}
+\textbf{Sensing RX} \texttt{(en Modulator)} & & \textbf{Visualización} \\[4pt]
+\fbox{\begin{tabular}{c}PairedFrameQueue\\OFDM demod\\Range-Doppler FFT\\CFAR\end{tabular}}
+& $\xrightarrow{\quad\text{UDP :8888}\quad}$
+& \fbox{\begin{tabular}{c}\texttt{plot\_sensing\_fast.py}\\Mapa R-D\\en tiempo real\end{tabular}}
+\end{tabular}
+\end{center}
+\end{tcolorbox}
+\end{center}
+
+En modo hardware, la señal \textbf{se transmite por el aire} entre antenas TX y RX del USRP.
+En modo ZMQ SIL, la señal se transfiere por \textbf{memoria local} a través de sockets ZeroMQ,
+y el canal físico es emulado por software.
+
+\subsection{Diagramas de flujo por modo de ejecución}
+
+Los tres modos de ejecución posibles se ilustran a continuación de forma independiente.
+
+\subsubsection{Modo 1 — Hardware real (USRP)}
+
+\begin{center}
+\begin{tcolorbox}[colback=codebg, colframe=primary, arc=3pt, boxrule=0.8pt,
+                  title={\small\textbf{Figura 2 — Modo Hardware: ejecución normal con USRP}}]
+\small\centering
+\begin{tabular}{ccccc}
+\textbf{Terminal 1} & & \textbf{Canal físico} & & \textbf{Terminal 2} \\[4pt]
+\fbox{\begin{tabular}{c}OFDMModulator\\(sin --zmq)\\LDPC + OFDM\\UHD TX stream\end{tabular}}
+& $\xrightarrow{\text{aire (RF)}}$
+& \fbox{\begin{tabular}{c}USRP\\TX/RX\\antenas reales\\propagación\end{tabular}}
+& $\xrightarrow{\text{UHD RX}}$
+& \fbox{\begin{tabular}{c}SensingChannel\\Range-Doppler\\UDP :8888\end{tabular}} \\[6pt]
+\multicolumn{5}{c}{$\downarrow$ UDP} \\[2pt]
+\multicolumn{5}{c}{\fbox{\texttt{plot\_sensing\_fast.py} — Terminal 3}} \\
+\end{tabular}
+\vspace{2pt}
+\begin{flushleft}
+\textbf{Comandos:}\\
+\texttt{Terminal 1:} \texttt{cd build \&\& ./OFDMModulator Modulator.yaml}\\
+\texttt{Terminal 2:} \texttt{python3 ../scripts/plot\_sensing\_fast.py}
+\end{flushleft}
+\end{tcolorbox}
+\end{center}
+
+\subsubsection{Modo 2 — Canal void (referencia nula, sin USRP)}
+
+\begin{center}
+\begin{tcolorbox}[colback=codebg, colframe=codegreen, arc=3pt, boxrule=0.8pt,
+                  title={\small\textbf{Figura 3 — Modo Canal Void: sin efectos de canal}}]
+\small\centering
+\begin{tabular}{ccc}
+\textbf{Terminal 1} & & \textbf{Terminal 2} \\[4pt]
+\fbox{\begin{tabular}{c}ChannelSimulator\_void\\BIND :5558 (PULL)\\BIND :5559 (PUSH)\\y[n] = x[n]\end{tabular}}
+& $\xleftarrow{\text{ZMQ :5558}}$
+& \fbox{\begin{tabular}{c}OFDMModulator --zmq\\LDPC + OFDM\\ZMQ PUSH :5558\end{tabular}} \\[6pt]
+\multicolumn{3}{c}{$\downarrow$ ZMQ :5559 (eco sin cambios)} \\[4pt]
+\multicolumn{3}{c}{\fbox{\begin{tabular}{c}SensingChannel (en Modulator)\\Range-Doppler $\rightarrow$ UDP :8888\end{tabular}}} \\[4pt]
+\multicolumn{3}{c}{\fbox{\texttt{plot\_sensing\_fast.py} — Terminal 3 (sin picos de target)}} \\
+\end{tabular}
+\vspace{2pt}
+\begin{flushleft}
+\textbf{Comandos (en orden):}\\
+\texttt{Terminal 1:} \texttt{cd build \&\& ./ChannelSimulator\_void Modulator.yaml}\\
+\texttt{Terminal 2:} \texttt{cd build \&\& ./OFDMModulator --zmq Modulator.yaml}\\
+\texttt{Terminal 3:} \texttt{python3 ../scripts/plot\_sensing\_fast.py}
+\end{flushleft}
+\end{tcolorbox}
+\end{center}
+
+\subsubsection{Modo 3 — Canal simulado con efectos físicos (sin USRP)}
+
+\begin{center}
+\begin{tcolorbox}[colback=codebg, colframe=warnborder, arc=3pt, boxrule=0.8pt,
+                  title={\small\textbf{Figura 4 — Modo Canal Simulado: efectos físicos controlables}}]
+\small\centering
+\begin{tabular}{ccc}
+\textbf{Terminal 1} & & \textbf{Terminal 2} \\[4pt]
+\fbox{\begin{tabular}{c}ChannelSimulator\\TUI ncurses\\Retardo $\tau(R)$\\Doppler $f_d(v)$\\Micro-Doppler $(A_m,f_m)$\\Ec. Radar $A_\text{eco}(R,\sigma)$\\AWGN $w[n]$\end{tabular}}
+& $\xleftarrow{\text{ZMQ :5558}}$
+& \fbox{\begin{tabular}{c}OFDMModulator --zmq\\LDPC + OFDM\\ZMQ PUSH :5558\end{tabular}} \\[6pt]
+\multicolumn{3}{c}{$\downarrow$ ZMQ :5559 (señal con efectos del canal)} \\[4pt]
+\multicolumn{3}{c}{\fbox{\begin{tabular}{c}SensingChannel (en Modulator)\\Range-Doppler $\rightarrow$ picos en $(R_i, v_i)$\\UDP :8888\end{tabular}}} \\[4pt]
+\multicolumn{3}{c}{\fbox{\texttt{plot\_sensing\_fast.py} — Terminal 3 (picos visibles en el mapa R-D)}} \\
+\end{tabular}
+\vspace{2pt}
+\begin{flushleft}
+\textbf{Comandos (en orden):}\\
+\texttt{Terminal 1:} \texttt{cd build \&\& ./ChannelSimulator Modulator.yaml}\\
+\texttt{Terminal 2:} \texttt{cd build \&\& ./OFDMModulator --zmq Modulator.yaml}\\
+\texttt{Terminal 3:} \texttt{python3 ../scripts/plot\_sensing\_fast.py}
+\end{flushleft}
+\end{tcolorbox}
+\end{center}
+
+\subsection{Flujo de datos detallado}
+
+\begin{enumerate}
+  \item \textbf{OFDMModulator (hilo \_modulation\_proc)}:
+        codifica los datos de usuario con LDPC, modula con OFDM (IFFT + CP) y deposita
+        cada frame de $N_\text{sym} \times (N_{FFT} + N_{CP})$ muestras complejas en
+        el buffer circular (\texttt{\_circular\_buffer}).
+
+  \item \textbf{OFDMModulator (hilo \_tx\_proc)} — modo ZMQ:
+        extrae el frame del buffer circular y lo envía via ZMQ PUSH al puerto 5558.
+        Simultáneamente, encola los símbolos en frecuencia en \texttt{PairedFrameQueue}
+        (lado TX) para el procesado radar posterior.
+
+  \item \textbf{ChannelSimulator}:
+        recibe el frame por ZMQ PULL (puerto 5558), aplica los efectos del canal
+        (véase Sección~\ref{sec:canal}) y envía el resultado por ZMQ PUSH (puerto 5559).
+
+  \item \textbf{OFDMModulator (hilo \_zmq\_sensing\_rx\_proc)}:
+        recibe el frame procesado por ZMQ PULL (puerto 5559) y lo inyecta en
+        \texttt{PairedFrameQueue} (lado RX), haciendo corresponder cada frame RX
+        con su frame TX por número de secuencia.
+
+  \item \textbf{OFDMModulator (hilo \_sensing\_loop)}:
+        extrae pares (TX, RX) de \texttt{PairedFrameQueue}, aplica demodulación OFDM
+        al lado RX y calcula el mapa Rango-Doppler mediante FFT 2D. El resultado
+        se envía via UDP al puerto 8888 para visualización con \texttt{plot\_sensing\_fast.py}.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Modelo de canal implementado}
+\label{sec:canal}
+
+El \texttt{ChannelSimulator} implementa un modelo físico de canal radar monostático
+para $N_T \leq 3$ objetivos (\textit{targets}) independientes. El modelo es continuo
+en tiempo discreto: se aplica muestra a muestra sobre el flujo I/Q recibido.
+
+La señal de salida del canal es la \textbf{superposición de los ecos de todos los
+targets más ruido AWGN}:
+
+\begin{mathbox}[Señal compuesta de salida del canal]
+\begin{equation}
+  y[n] = \sum_{i=1}^{N_T} A_{\text{eco},i} \cdot x[n - d_i] \cdot p_i[n] + w[n]
+  \label{eq:canal_completo}
+\end{equation}
+donde $x[n]$ es la señal transmitida, $A_{\text{eco},i}$ la amplitud del eco del
+target $i$, $d_i$ el retardo en muestras, $p_i[n]$ el fasor de Doppler (con
+micro-Doppler opcional) y $w[n]$ el ruido aditivo.
+\end{mathbox}
+
+\subsection{Retardo de rango}
+
+El eco del target $i$ a distancia $R_i$ se recibe con un retardo de ida y vuelta:
+\begin{equation}
+  \tau_i = \frac{2 R_i}{c} \quad \text{[s]}
+\end{equation}
+donde $c = 2{,}998 \times 10^8$ m/s es la velocidad de la luz. El retardo en muestras
+enteras es:
+\begin{equation}
+  d_i = \left\lfloor \frac{2 R_i}{c} \cdot f_s + 0{,}5 \right\rfloor \quad \text{[muestras]}
+  \label{eq:delay}
+\end{equation}
+con $f_s$ la frecuencia de muestreo del sistema (parámetro \texttt{sample\_rate} en el YAML).
+
+El retardo se implementa mediante un \textbf{buffer circular} de profundidad
+$d_\text{max} = \lceil 2 \times 20000 / c \times f_s \rceil + N_\text{frame} + 1$
+(suficiente para alojar el eco más lejano de la TUI: $R_\text{max} = 10$ km,
+round-trip $= 20$ km):
+
+\begin{lstlisting}[style=cpp,
+  caption={Implementación del buffer circular de retardo — ChannelSimulator.cpp, líneas 68--72 y 113--115}]
+// Profundidad del buffer circular: round-trip de 20 km + margen
+const size_t max_delay_samps =
+    static_cast<size_t>(std::ceil(2.0f * 20000.0f / C_LIGHT * fs))
+    + buffer_size + 1u;
+std::vector<std::complex<float>> ring(max_delay_samps, {0.f, 0.f});
+
+// ...
+// Escritura en el buffer circular con el frame entrante
+for (ssize_t i = 0; i < n; ++i)
+    ring[(ring_write + static_cast<size_t>(i)) % max_delay_samps] = in_buf[i];
+\end{lstlisting}
+
+\begin{lstlisting}[style=cpp,
+  caption={Cálculo del retardo y lectura desde el buffer — ChannelSimulator.cpp, líneas 129--130 y 156--159}]
+// d_i = round(2*R_i / c * f_s)  [ecuacion eq:delay]
+const size_t delay_samps =
+    static_cast<size_t>(std::round(2.0f * dist / C_LIGHT * fs));
+
+// ...
+// Lectura del buffer con el retardo correspondiente al target i
+const size_t src =
+    (ring_write + static_cast<size_t>(i) + max_delay_samps - delay_samps)
+    % max_delay_samps;
+\end{lstlisting}
+
+\begin{infobox}[Resolución en rango]
+La resolución en rango del procesado ISAC es $\Delta R = c / (2B)$, donde $B$ es el
+ancho de banda de la señal OFDM ($B \approx f_s$ para subportadoras densas). Con
+$f_s = 50$ MHz: $\Delta R = 3$ m/muestra (muestras de tiempo) vs.
+$\Delta R_\text{ISAC} = c/2B \approx 3$ m (bin Range-FFT). El retardo del canal
+está cuantificado a resolución de 1 muestra, coherente con la resolución del
+procesador ISAC.
+\end{infobox}
+
+\subsection{Desplazamiento Doppler}
+
+Un target que se mueve con velocidad radial $v_i$ (positivo = aproximándose)
+introduce un desplazamiento Doppler en la señal recibida:
+\begin{equation}
+  f_{d,i} = \frac{2 v_i f_c}{c} \quad \text{[Hz]}
+  \label{eq:doppler_freq}
+\end{equation}
+donde $f_c$ es la frecuencia portadora (parámetro \texttt{center\_freq} en el YAML).
+
+El desplazamiento Doppler se implementa como una \textbf{multiplicación por un fasor
+complejo giratorio de amplitud unitaria}. El fasor se actualiza de forma incremental
+entre muestras consecutivas, evitando el cálculo de funciones trigonométricas en el
+bucle interno (RT critical path):
+\begin{equation}
+  \Delta\phi_i = \frac{2\pi f_{d,i}}{f_s}
+  \label{eq:doppler_phi}
+\end{equation}
+\begin{equation}
+  p_i[n+1] = p_i[n] \cdot e^{j\Delta\phi_i} = p_i[n] \cdot (\cos\Delta\phi_i + j\sin\Delta\phi_i)
+  \label{eq:doppler_phasor}
+\end{equation}
+
+La multiplicación del fasor es una operación de \textbf{2 multiplicaciones + 2 sumas reales}
+(rotación compleja), frente a las $\approx 15$ ns de \texttt{sin}/\texttt{cos} en hardware
+x86. El fasor se renormaliza a módulo unidad cada 256 frames para compensar la deriva
+acumulada de punto flotante.
+
+\begin{lstlisting}[style=cpp,
+  caption={Inicialización del fasor Doppler — ChannelSimulator.cpp, líneas 146--147}]
+// Delta de fase Doppler por muestra: d_phi = 2*pi * f_d / fs  [ec. eq:doppler_phi]
+// f_d = 2*vel*fc/c                                           [ec. eq:doppler_freq]
+const float   d_phi    = 2.0f * PIf * (2.0f * vel * fc / C_LIGHT) / fs;
+const std::complex<float> d_rot{std::cos(d_phi), std::sin(d_phi)};
+\end{lstlisting}
+
+\begin{lstlisting}[style=cpp,
+  caption={Avance incremental del fasor — ChannelSimulator.cpp, líneas 168--172}]
+// Rotacion incremental: p[n+1] = p[n] * d_rot  [ec. eq:doppler_phasor]
+// Implementada como multiplicacion de complejos (sin llamar a sin/cos por muestra)
+dop_phasor[ti] = {
+    dop_phasor[ti].real() * d_rot.real() - dop_phasor[ti].imag() * d_rot.imag(),
+    dop_phasor[ti].real() * d_rot.imag() + dop_phasor[ti].imag() * d_rot.real()
+};
+\end{lstlisting}
+
+\begin{lstlisting}[style=cpp,
+  caption={Renormalización del fasor cada 256 frames — ChannelSimulator.cpp, líneas 184--191}]
+// Renormalizar phasors cada 256 frames para evitar deriva de punto flotante.
+// La multiplicacion acumulada de floats introduce error O(eps * n_samples).
+if (++renorm_ctr >= 256) {
+    renorm_ctr = 0;
+    for (int ti = 0; ti < 3; ++ti) {
+        const float mag = std::abs(dop_phasor[ti]);
+        if (mag > 0.0f) dop_phasor[ti] /= mag;
+    }
+}
+\end{lstlisting}
+
+\subsection{Micro-Doppler}
+
+El micro-Doppler modela la modulación adicional en fase introducida por la vibración
+o movimiento periódico de partes del target (p.ej. hélices, extremidades). Se implementa
+como una modulación en fase sinusoidal superpuesta al fasor Doppler principal:
+
+\begin{equation}
+  \phi_m(n) = A_m \sin\!\left(\frac{2\pi f_m n}{f_s}\right)
+  \label{eq:microdoppler_phase}
+\end{equation}
+
+El fasor combinado (Doppler + micro-Doppler) es:
+\begin{equation}
+  p_i[n] = e^{j\left(\phi_{d,i}(n) + A_m \sin(2\pi f_m n / f_s)\right)}
+  \label{eq:phasor_combined}
+\end{equation}
+
+donde $A_m$ [\text{rad}] es la amplitud de la desviación de fase y $f_m$ [Hz] la frecuencia
+de vibración. Este efecto produce \textit{sidebands} simétricas en el espectro Doppler
+separadas $\pm k f_m$ de la frecuencia Doppler principal, característica de objetos
+con partes en movimiento.
+
+La implementación avanza el acumulador de micro-Doppler sample a sample mediante las
+fórmulas de adición trigonométrica (sin llamadas a \texttt{sin}/\texttt{cos} en el bucle):
+
+\begin{lstlisting}[style=cpp,
+  caption={Inicialización del acumulador micro-Doppler — ChannelSimulator.cpp, líneas 149--154}]
+// md_phase[ti] acumula la fase del oscilador de micro-Doppler entre frames
+// md_step = 2*pi*f_m / fs  (incremento de fase por muestra)
+const float md_step   = 2.0f * PIf * md_freq / fs;
+float md_sin = std::sin(md_phase[ti]);   // sin(phi_m[n])
+float md_cos = std::cos(md_phase[ti]);   // cos(phi_m[n])
+const float md_sin_s  = std::sin(md_step);  // sin(Delta_phi_m)
+const float md_cos_s  = std::cos(md_step);  // cos(Delta_phi_m)
+\end{lstlisting}
+
+\begin{lstlisting}[style=cpp,
+  caption={Aplicación del micro-Doppler al fasor — ChannelSimulator.cpp, líneas 161--178}]
+std::complex<float> phasor = dop_phasor[ti];
+if (md_amp > 0.0f) {
+    // phi_micro = A_m * sin(phi_m[n])       [ec. eq:microdoppler_phase]
+    // phasor_total = phasor_doppler * exp(j * phi_micro)   [ec. eq:phasor_combined]
+    const float md_mod = md_amp * md_sin;
+    phasor *= std::complex<float>{std::cos(md_mod), std::sin(md_mod)};
+}
+out_buf[i] += echo_amp * ring[src] * phasor;  // suma contribucion del target i
+
+// Avance del oscilador de micro-Doppler usando suma de angulos (sin trig por muestra):
+// sin(phi + Delta) = sin(phi)*cos(Delta) + cos(phi)*sin(Delta)
+// cos(phi + Delta) = cos(phi)*cos(Delta) - sin(phi)*sin(Delta)
+if (md_amp > 0.0f) {
+    const float ns = md_sin * md_cos_s + md_cos * md_sin_s;
+    const float nc = md_cos * md_cos_s - md_sin * md_sin_s;
+    md_sin = ns; md_cos = nc;
+}
+\end{lstlisting}
+
+\subsection{Amplitud del eco — ecuación del radar normalizada}
+
+La potencia de la señal recibida en un radar monostático viene dada por la
+\textbf{ecuación del radar}:
+\begin{equation}
+  P_r = \frac{P_t G_t G_r \lambda^2 \sigma_\text{RCS}}{(4\pi)^3 R^4}
+  \label{eq:radar_equation}
+\end{equation}
+donde $P_t$ es la potencia transmitida, $G_t$ y $G_r$ las ganancias de antena TX y RX,
+$\lambda = c/f_c$ la longitud de onda, $\sigma_\text{RCS}$ la sección eficaz radar
+(\textit{Radar Cross Section}) y $R$ la distancia al target.
+
+En el dominio de amplitud de señal ($A = \sqrt{P}$), la amplitud del eco recibido escala
+como $R^{-2}$. Para la simulación se usa una forma normalizada de la ecuación:
+
+\begin{mathbox}[Amplitud del eco — forma implementada]
+\begin{equation}
+  A_{\text{eco},i} = K_\text{sim} \cdot G(\theta_i) \cdot \lambda \cdot \frac{\sqrt{\sigma_{\text{RCS},i}}}{R_i^2}
+  \cdot 10^{P_{TX}/20} \cdot 10^{G_{RX}/20}
+  \label{eq:echo_amp}
+\end{equation}
+
+donde $K_\text{sim} = 120$ es la constante de normalización calibrada para obtener
+$A_\text{eco} \approx 0.01$ a las condiciones de referencia: $R = 25$ m,
+$\sigma_\text{RCS} = 1$ m$^2$, antena omni ($G = 1$), $f_c = 5{,}8$ GHz,
+$P_{TX} = G_{RX} = 0$ dB.
+
+\medskip
+\textbf{Verificación numérica de $K_\text{sim} = 120$:}
+
+A las condiciones de referencia, $\lambda = c/f_c = 3\!\times\!10^8\,\text{m/s}\;/\;5{,}8\!\times\!10^9\,\text{Hz} \approx 0{,}0517$ m.
+Con $G(\theta)=1$ (omni), $\sqrt{\sigma_\text{RCS}}=1$ m, $R^2 = 25^2 = 625$ m² y $P_{TX}=G_{RX}=0$ dB ($10^{0/20}=1$):
+
+\begin{equation}
+  A_\text{eco} = K_\text{sim}\cdot \frac{G \cdot \lambda \cdot \sqrt{\sigma_\text{RCS}}}{R^2}
+               = 120 \cdot \frac{1 \cdot 0{,}0517 \cdot 1}{625}
+               = \frac{6{,}204}{625} \approx 0{,}00993 \approx 0{,}01
+\end{equation}
+
+El valor $K_\text{sim} = 120$ (\texttt{KSIM\_NORM} en \texttt{ChannelSimulator.cpp}) se elige de modo que la amplitud del eco sea del orden de $10^{-2}$, lo que sitúa la señal útil entre el piso de ruido ($\sigma_n \approx 10^{-3}$ con $N_\text{dB}=-60$ dBP) y la saturación de la escala unitaria, proporcionando un margen dinámico operativo de $\approx 20$ dB.
+\end{mathbox}
+
+\begin{lstlisting}[style=cpp,
+  caption={Cálculo de la amplitud del eco — ChannelSimulator.cpp, líneas 105--143}]
+// Ganancia TX y RX en amplitud: 10^(dB/20)
+const float tx_scale = std::pow(10.0f, tx_power_db / 20.0f);
+const float rx_scale = std::pow(10.0f, rx_gain_db  / 20.0f);
+
+// Ganancia de antena maxima (antena directiva Gaussiana)
+// G_max = 16*ln2 / theta_3dB^2  (antena de haz Gaussiano)
+// Para antena omni: G = 1.
+const float G = (ant_type == 0 || ant_bw_deg <= 0.0f) ? 1.0f : [&] {
+    const float bw = ant_bw_deg * PIf / 180.0f;     // radianes
+    return 16.0f * 0.6931472f / (bw * bw);          // G_max
+}();
+
+// ...
+// Patron de radiacion Gaussiano para la direccion del target
+float beam_factor = 1.0f;
+if (ant_type == 1 && ant_bw_deg > 0.0f) {
+    const float theta_half = (ant_bw_deg * 0.5f) * PIf / 180.0f;
+    const float theta      = std::abs(angle_d) * PIf / 180.0f;
+    // G(theta) = exp(-ln2 * (theta / theta_half)^2)   [ec. eq:beam_pattern]
+    beam_factor = std::exp(-0.6931472f * (theta / theta_half) * (theta / theta_half));
+}
+
+// Amplitud del eco: A_eco = Ksim * G * G(theta) * lambda * sqrt(RCS) / R^2
+//                           * tx_scale * rx_scale          [ec. eq:echo_amp]
+// lambda = C_LIGHT / fc  (calculado al inicio de signal_loop)
+const float echo_amp = KSIM_NORM * G * beam_factor * lambda * std::sqrt(rcs)
+                       / (dist * dist) * tx_scale * rx_scale;
+\end{lstlisting}
+
+\subsection{Diagrama de radiación de antena directiva}
+
+Para el modo de antena directiva (\texttt{antenna\_type = 1}), el diagrama de radiación
+se aproxima con una forma Gaussiana, que es una buena aproximación al lóbulo principal
+de antenas de apertura y de bocina:
+
+\begin{equation}
+  G(\theta) = G_\text{max} \cdot \exp\!\left(-\ln 2 \cdot \left(\frac{\theta}{\theta_{3\text{dB}}/2}\right)^{\!2}\right)
+  \label{eq:beam_pattern}
+\end{equation}
+
+donde $\theta$ es el ángulo off-boresight del target, $\theta_{3\text{dB}}$ el ancho de
+haz a $-3$ dB (\texttt{antenna\_beamwidth\_deg}) y $G_\text{max}$ la ganancia de pico:
+\begin{equation}
+  G_\text{max} = \frac{16 \ln 2}{\theta_{3\text{dB}}^2} \quad (\theta_{3\text{dB}} \text{ en radianes})
+  \label{eq:gain_max}
+\end{equation}
+
+Esta expresión se obtiene imponiendo que $G(\theta_{3\text{dB}}/2) = G_\text{max}/2$
+(definición de los 3 dB) en la forma Gaussiana y que la integral del patrón sobre el
+espacio sólido total sea la unidad (conservación de energía en la aproximación de campo
+lejano).
+
+\begin{infobox}[Para antena omnidireccional]
+Cuando \texttt{antenna\_type = 0} (Omni), se usa $G(\theta) = 1$ para todo $\theta$,
+lo que equivale a $G_\text{max} = 1$ y $\theta_{3\text{dB}} \to \infty$.
+\end{infobox}
+
+\subsection{Ruido AWGN}
+
+Se añade ruido gaussiano blanco aditivo complejo (\textit{Additive White Gaussian Noise})
+con densidad espectral de potencia uniforme. El parámetro de control es la \textbf{potencia
+del ruido} $N_\text{dB}$ expresada en dB con referencia a potencia unidad:
+\begin{equation}
+  \sigma_n^2 = 10^{N_\text{dB}/10}, \qquad
+  \sigma_n   = 10^{N_\text{dB}/20}
+  \label{eq:awgn_sigma}
+\end{equation}
+\begin{equation}
+  w[n] \sim \mathcal{CN}(0, \sigma_n^2), \quad
+  w[n] = \sigma_n \cdot \mathcal{N}(0,1) + j \sigma_n \cdot \mathcal{N}(0,1)
+  \label{eq:awgn}
+\end{equation}
+
+\begin{warnbox}[Nota sobre el modelo de ruido]
+El parámetro \texttt{noise\_power\_db} actúa como \textbf{piso de ruido absoluto}:
+es independiente de la ganancia de recepción \texttt{rx\_gain\_db}. Esto modela un
+sistema donde el ruido entra en la antena (ruido de antena + temperatura ambiente),
+mientras que \texttt{rx\_gain\_db} actúa como un amplificador que mejora la SNR del eco
+pero no afecta al piso de ruido (figura de ruido nula del amplificador). Para simular
+una figura de ruido finita, incrementar \texttt{noise\_power\_db} y \texttt{rx\_gain\_db}
+simultáneamente en la misma cantidad.
+\end{warnbox}
+
+La generación de ruido usa una \textbf{tabla precalculada} de $2^{17} = 131\,072$ muestras
+Gaussianas (512 KB, cabe en caché L3) para evitar la latencia del generador
+\texttt{std::normal\_distribution} en el bucle RT ($\approx 15$ ns/muestra vs.
+$\approx 2$ ns con tabla):
+
+\begin{lstlisting}[style=cpp,
+  caption={Generación de ruido AWGN con tabla precalculada — ChannelSimulator.cpp, líneas 78--86 y 196--206}]
+// Tabla de ruido precalculada (una vez al inicio, semilla fija = 42 para reproducibilidad)
+std::vector<float> noise_tbl(NOISE_TBL_SZ);   // NOISE_TBL_SZ = 2^17 = 131072
+{
+    std::mt19937 rng0{42u};
+    std::normal_distribution<float> g{0.f, 1.f};
+    for (auto& x : noise_tbl) x = g(rng0);
+}
+size_t nidx = 0;   // indice ciclico
+
+// --- Bucle por muestra (hot path RT) ---
+// sigma_n = sqrt(10^(noise_pdb/10))  [ec. eq:awgn_sigma]
+const float nsigma = std::sqrt(std::pow(10.0f, noise_pdb / 10.0f));
+for (ssize_t i = 0; i < n; ++i) {
+    // w[n] = sigma_n * (N_I + j*N_Q)  [ec. eq:awgn]
+    // N_I, N_Q ~ N(0,1) independientes, tomados de la tabla ciclica
+    out_buf[i] += std::complex<float>{
+        nsigma * noise_tbl[nidx        & (NOISE_TBL_SZ - 1u)],   // componente I
+        nsigma * noise_tbl[(nidx + 1u) & (NOISE_TBL_SZ - 1u)]    // componente Q
+    };
+    nidx += 2u;
+}
+\end{lstlisting}
+
+\subsection{Tabla de parámetros del canal}
+
+{\small
+\noindent Todos los campos pertenecen a \texttt{ChannelParams.hpp}.
+
+\begin{tabularx}{\linewidth}{l p{4.6cm} p{2.0cm} X}
+\toprule
+\textbf{Parámetro} & \textbf{Campo} & \textbf{Defecto} & \textbf{Descripción} \\
+\midrule
+\multicolumn{4}{l}{\textit{Parámetros de sistema}} \\
+Potencia TX & \texttt{tx\_power\_db} & 0 dB & Escala TX: $10^{P_{TX}/20}$ \\
+Ganancia RX & \texttt{rx\_gain\_db} & 0 dB & Escala RX: $10^{G_{RX}/20}$ \\
+Ruido AWGN  & \texttt{noise\_power\_db} & $-60$ dBP & Piso ruido: $\sigma_n = 10^{N/20}$ \\
+Tipo antena & \texttt{antenna\_type} & 0 (Omni) & 0 = omni, 1 = directiva Gauss. \\
+Ancho haz   & \texttt{antenna\_beamwidth\_deg} & 30° & $\theta_{3\text{dB}}$ para directiva \\
+$N_T$       & \texttt{num\_targets} & 1 & Núm.\ targets activos (0–3) \\
+\midrule
+\multicolumn{4}{l}{\textit{Parámetros por target (×3)}} \\
+$R_i$            & \texttt{distance}          & 25 m   & Distancia al target \\
+$v_i$            & \texttt{velocity}          & 10 m/s & Velocidad radial ($+$: acercándose) \\
+$\theta_i$       & \texttt{angle\_deg}        & 0°     & Ángulo off-boresight (directiva) \\
+$A_m$            & \texttt{micro\_doppler\_amp}  & 0 rad  & Amplitud modulación micro-Doppler \\
+$f_m$            & \texttt{micro\_doppler\_freq} & 10 Hz  & Frecuencia vibración micro-Doppler \\
+$\sigma_\text{RCS}$ & \texttt{rcs}            & 1 m$^2$ & Sección eficaz radar del target \\
+\bottomrule
+\end{tabularx}
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Canal transparente: ChannelSimulator\_void}
+
+El \texttt{ChannelSimulator\_void} implementa un canal completamente transparente:
+recibe cada frame I/Q por ZMQ PULL (puerto 5558) y lo retransmite \textbf{sin ninguna
+modificación} por ZMQ PUSH (puerto 5559):
+
+\begin{equation}
+  y[n] = x[n] \quad \forall n
+  \label{eq:void_channel}
+\end{equation}
+
+Su propósito es proporcionar una \textbf{referencia experimental} que permite:
+\begin{itemize}
+  \item Verificar que el pipeline ZMQ completo funciona correctamente.
+  \item Comprobar que, sin objetos en el canal, el mapa Rango-Doppler no muestra
+        picos espurios significativos (solo la correlación cruzada TX/TX cerca del
+        origen, que corresponde a la señal directa).
+  \item Depurar el procesado radar aislando los efectos del canal.
+\end{itemize}
+
+\begin{lstlisting}[style=cpp,
+  caption={Bucle principal del canal void — channel\_sim/src/ChannelSimulator\_void.cpp, líneas 30--49}]
+// Canal transparente: recv() -> send() sin modificacion
+// y[n] = x[n]  [ec. eq:void_channel]
+static void signal_loop(RadioInterface& radio, size_t buffer_size) {
+    std::vector<std::complex<float>> buf(buffer_size);
+    uint64_t frames = 0;
+
+    while (g_running.load(std::memory_order_relaxed)) {
+        const ssize_t n = radio.recv(buf.data(), buffer_size);
+        if (n <= 0) continue;   // timeout o error — reintentar
+
+        radio.send(buf.data(), static_cast<size_t>(n));  // retransmitir intacto
+        ++frames;
+
+        // Indicador de actividad: imprimir cada 1000 frames
+        if (frames % 1000u == 0u)
+            std::printf("[VOID] Tramas retransmitidas: %llu\n",
+                        static_cast<unsigned long long>(frames));
+    }
+}
+\end{lstlisting}
+
+\begin{infobox}[Resultado esperado con canal void]
+Al ejecutar \texttt{plot\_sensing\_fast.py} con el canal void activo:
+\begin{itemize}
+  \item El mapa Rango-Doppler no debe mostrar picos de alta amplitud fuera del
+        bin (0,0) (correlación directa).
+  \item La presencia del bin (0,0) es normal y se debe a la correlación TX/TX
+        de la señal piloto OFDM consigo misma.
+  \item Si aparecen picos en bins distintos de (0,0), puede indicar multipath
+        en la interfaz loopback o un problema de configuración.
+\end{itemize}
+\end{infobox}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Cambios al código original de OpenISAC}
+\label{sec:cambios}
+
+Esta sección describe con detalle todos los cambios introducidos respecto al
+repositorio original de OpenISAC en GitHub. Los cambios se dividen en:
+(1) archivos nuevos, (2) archivos modificados, y (3) correcciones de bugs críticos
+detectados durante el desarrollo de la extensión ZMQ SIL.
+
+\subsection{Archivos nuevos}
+
+{\small
+\begin{tabularx}{\linewidth}{p{5.4cm}X}
+\toprule
+\textbf{Archivo} & \textbf{Descripción} \\
+\midrule
+\texttt{channel\_sim/src/}\newline\texttt{ChannelSimulator.cpp} &
+  Canal simulado completo. Implementa el modelo físico descrito en la Sección~\ref{sec:canal},
+  pipeline ZMQ, TUI ncurses interactiva y control UDP en tiempo real. \\
+\addlinespace
+\texttt{channel\_sim/src/}\newline\texttt{ChannelSimulator\_void.cpp} &
+  Canal transparente. Pasa la señal sin modificar (referencia nula). \\
+\addlinespace
+\texttt{channel\_sim/include/}\newline\texttt{ChannelParams.hpp} &
+  Parámetros del canal. Todos los campos son \texttt{std::atomic<>},
+  permitiendo acceso concurrente seguro desde el hilo RT y la TUI/UDP. \\
+\addlinespace
+\texttt{channel\_sim/src/}\newline\texttt{ZmqInterface.cpp} &
+  Interfaz ZeroMQ PUSH/PULL para el simulador de canal.
+  Hace BIND en los puertos 5558 (recepción) y 5559 (transmisión). \\
+\addlinespace
+\texttt{channel\_sim/include/}\newline\texttt{ZmqInterface.hpp} &
+  Cabecera de \texttt{ZmqInterface} y estructura \texttt{ZmqChannelSimConfig}. \\
+\addlinespace
+\texttt{scripts/run\_modulator.bash} &
+  Watchdog: reinicia \texttt{OFDMModulator --zmq} automáticamente tras cualquier
+  terminación no deseada. Parada limpia con Ctrl+C en el terminal
+  del watchdog. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Archivos modificados}
+
+\subsubsection{src/OFDMModulator.cpp}
+
+\paragraph{(a) Flag \texttt{--zmq} en la CLI}
+
+El parser de argumentos de línea de comandos se extiende para reconocer el flag \texttt{--zmq}
+que activa el modo SIL:
+
+\begin{lstlisting}[style=cpp,
+  caption={Detección del flag --zmq — OFDMModulator.cpp}]
+bool zmq_mode = false;
+// ...
+for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--zmq") {
+        zmq_mode = true;
+    }
+}
+cfg.zmq_mode = zmq_mode;
+if (zmq_mode) {
+    // Usar YAML paired_frame_queue_size, con minimo 256
+    // (la latencia ZMQ ~10-30 frames requiere cola ampliada)
+    if (cfg.paired_frame_queue_size < 256) {
+        cfg.paired_frame_queue_size = 256;
+    }
+}
+\end{lstlisting}
+
+\begin{infobox}[Nota sobre paired\_frame\_queue\_size]
+En el código original, la cola de pareado TX/RX (\texttt{PairedFrameQueue}) tiene un
+tamaño de 8 frames. El modo ZMQ introduce una latencia variable de 10–30 frames
+entre TX y RX (latencia de la red loopback + procesado del ChannelSimulator). Con una
+cola de 8 frames, el modulador descartaría frames TX constantemente. El mínimo de 256
+frames proporciona $\approx 590$ ms de margen (a 434 Hz de frame rate), suficiente para
+absorber ráfagas de latencia.
+\end{infobox}
+
+\paragraph{(b) Inicialización de sockets ZMQ}
+
+En modo \texttt{--zmq}, la función \texttt{\_init\_usrp()} omite toda la inicialización
+de hardware (USRP, streams) y en su lugar crea los sockets ZeroMQ:
+
+\begin{lstlisting}[style=cpp,
+  caption={Creación de sockets ZMQ en lugar de USRP — OFDMModulator.cpp}]
+#ifdef OPENISAC_ZMQ_SUPPORT
+if (_cfg.zmq_mode) {
+    // Contexto ZMQ con 1 hilo I/O
+    _zmq_ctx  = std::make_unique<zmq::context_t>(1);
+
+    // Socket TX (PUSH): envia frames al ChannelSimulator (puerto 5558)
+    // HWM=4: si el buffer del canal esta lleno, los sends bloquean 500ms y descartan
+    _zmq_push = std::make_unique<zmq::socket_t>(*_zmq_ctx, zmq::socket_type::push);
+    _zmq_push->set(zmq::sockopt::sndhwm, 4);
+    _zmq_push->set(zmq::sockopt::sndtimeo, 500);  // 500ms timeout
+    _zmq_push->connect("tcp://127.0.0.1:5558");
+
+    // Socket RX sensing (PULL): recibe frames procesados (puerto 5559)
+    // rcvtimeo=100ms: timeout corto para no bloquear el hilo indefinidamente
+    _zmq_sensing_pull = std::make_unique<zmq::socket_t>(*_zmq_ctx, zmq::socket_type::pull);
+    _zmq_sensing_pull->set(zmq::sockopt::rcvtimeo, 100);
+    _zmq_sensing_pull->connect("tcp://127.0.0.1:5559");
+    return;  // sin inicializacion de USRP
+}
+#endif
+// ... inicializacion normal de USRP ...
+\end{lstlisting}
+
+\paragraph{(c) Hilo \_zmq\_sensing\_rx\_proc}
+
+Nuevo hilo dedicado a recibir los frames del canal (puerto 5559) e inyectarlos
+en el pipeline de sensing:
+
+\begin{lstlisting}[style=cpp,
+  caption={Hilo de recepción ZMQ sensing — OFDMModulator.cpp, lineas 1432--1482}]
+void _zmq_sensing_rx_proc() {
+    const size_t frame_size = _cfg.samples_per_frame();
+    AlignedVector frame_buf(frame_size);
+    size_t frame_received = 0;
+
+    while (_running.load(std::memory_order_relaxed)) {
+        zmq::message_t msg;
+        try {
+            auto res = _zmq_sensing_pull->recv(msg, zmq::recv_flags::none);
+            if (!res || msg.size() == 0) continue;
+        } catch (const zmq::error_t& e) {
+            if (e.num() == ETERM) break;   // contexto destruido — salida limpia
+            continue;
+        }
+
+        // Ensamblar frames OFDM completos a partir de mensajes ZMQ de tamano variable
+        const size_t msg_samps = msg.size() / sizeof(std::complex<float>);
+        const auto* src = static_cast<const std::complex<float>*>(msg.data());
+        size_t src_pos = 0;
+
+        while (src_pos < msg_samps) {
+            const size_t to_copy = std::min(frame_size - frame_received,
+                                            msg_samps - src_pos);
+            std::memcpy(frame_buf.data() + frame_received, src + src_pos,
+                        to_copy * sizeof(std::complex<float>));
+            frame_received += to_copy;
+            src_pos        += to_copy;
+
+            if (frame_received >= frame_size) {
+                const uint64_t seq = _zmq_rx_frame_seq.fetch_add(1);
+                for (auto& ch : _sensing_channels) {
+                    // Adquirir buffer del pool (NO asignar heap nuevo por frame):
+                    // evita fuga de memoria de 14 GB en 37 s (ver Seccion 6.3)
+                    AlignedVector ch_buf = ch->acquire_rx_frame();
+                    if (ch_buf.size() != frame_size) ch_buf.resize(frame_size);
+                    std::copy(frame_buf.begin(), frame_buf.end(), ch_buf.begin());
+                    ch->push_zmq_rx_frame(std::move(ch_buf), seq);
+                    // Si push falla (cola llena), push_zmq_rx_frame
+                    // libera el buffer al pool automaticamente.
+                }
+                frame_received = 0;
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+\paragraph{(d) Hilo \_tx\_proc — modo ZMQ}
+
+El hilo transmisor se adapta para enviar los frames via ZMQ en lugar de al stream USRP.
+Se añade una pausa temporal artificial para mantener la cadencia de frames:
+
+\begin{lstlisting}[style=cpp,
+  caption={Envío ZMQ y pacing temporal — OFDMModulator.cpp}]
+// Envio del frame via ZMQ PUSH (en lugar de uhd::tx_stream::send())
+const bool ok = _zmq_push->send(msg, zmq::send_flags::none).has_value();
+// ...
+
+// Guardia de underflow: solo activa el reinicio si NO estamos en modo ZMQ.
+// En ZMQ, un fallo de send es un timeout de red (HWM), no un underflow HW.
+if (!_cfg.zmq_mode && sent < frame_to_send.samples.size()) {
+    _tx_underflow_restart_requested.store(true);
+}
+
+// Pacing temporal: dormir el tiempo equivalente a un frame
+// para no saturar el canal ZMQ ni generar latencia acumulada.
+// T_frame = samples_per_frame / sample_rate [segundos]
+if (_cfg.zmq_mode) {
+    std::this_thread::sleep_for(std::chrono::duration<double>(
+        static_cast<double>(_cfg.samples_per_frame()) / _cfg.sample_rate));
+}
+\end{lstlisting}
+
+\paragraph{(e) Registro de SIGTERM}
+
+El código original solo registraba el manejador de señal para SIGINT (Ctrl+C).
+SIGTERM (señal de terminación estándar de Linux/systemd) usaba el handler por
+defecto, que termina el proceso \textbf{sin ejecutar ningún código de limpieza} y
+sin imprimir mensajes de error:
+
+\begin{lstlisting}[style=cpp,
+  caption={Registro de SIGTERM — OFDMModulator.cpp}]
+// Codigo original (solo SIGINT):
+std::signal(SIGINT, &signal_handler);
+
+// Codigo corregido (SIGINT + SIGTERM):
+std::signal(SIGINT,  &signal_handler);
+std::signal(SIGTERM, &signal_handler);   // terminar limpiamente con kill/systemd
+\end{lstlisting}
+
+\subsubsection{src/SensingChannel.cpp / include/SensingChannel.hpp}
+
+\paragraph{(a) Método start\_zmq\_rx()}
+
+Nuevo método público que arranca el hilo de procesado de sensing en modo ZMQ,
+sin inicializar el hardware RX de la USRP:
+
+\begin{lstlisting}[style=cpp,
+  caption={start\_zmq\_rx() — SensingChannel.cpp, líneas 891--903}]
+void SensingChannel::start_zmq_rx() {
+    _stop_requested.store(false);
+    _compute.bistatic_active = false;
+    _compute.next_delay_estimation_frame_seq = 0;
+    _rx_io.stream_start_time = uhd::time_spec_t(0.0);
+    _rx_io.next_rx_frame_seq = 0;
+    // Activar modo ZMQ loopback en la cola de pareado:
+    // pop_pair() usara timeout en lugar de bloqueo infinito
+    // para que el hilo de sensing no quede bloqueado si se descartan frames TX
+    _rx_io.paired_queue->set_zmq_loopback(true);
+    _compute.sensing_sender.start();
+    // Sin hilo _rx_io.rx_thread: los frames los provee _zmq_sensing_rx_proc
+    _compute.sensing_thread = std::thread(&SensingChannel::_sensing_loop, this);
+}
+\end{lstlisting}
+
+\paragraph{(b) Métodos acquire\_rx\_frame() / release\_rx\_frame()}
+
+Nuevos métodos para exponer el pool interno de buffers RX al hilo ZMQ externo,
+necesarios para resolver la fuga de memoria descrita en la Sección~\ref{sec:bugs}:
+
+\begin{lstlisting}[style=cpp,
+  caption={Nuevos métodos de pool — SensingChannel.cpp / SensingChannel.hpp}]
+// Adquirir buffer preasignado del pool (sin asignacion de heap)
+AlignedVector SensingChannel::acquire_rx_frame() {
+    return _rx_io.rx_frame_pool.acquire();
+}
+
+// Devolver buffer al pool (sin liberar memoria)
+void SensingChannel::release_rx_frame(AlignedVector&& buf) {
+    _rx_io.rx_frame_pool.release(std::move(buf));
+}
+\end{lstlisting}
+
+\paragraph{(c) PairedFrameQueue: modo ZMQ loopback}
+
+La clase interna \texttt{PairedFrameQueue} se extiende con un mecanismo de
+\textbf{timeout en el lado TX} para el modo ZMQ. Sin este mecanismo, si la cola TX
+se llena y se descartan frames TX, el hilo de sensing se bloquea indefinidamente
+esperando el frame TX descartado (que nunca llegará):
+
+\begin{lstlisting}[style=cpp,
+  caption={Timeout ZMQ en PairedFrameQueue — SensingChannel.cpp, líneas 370--412}]
+// Nueva bandera atomica: activada por set_zmq_loopback(true)
+std::atomic<bool> _zmq_loopback{false};
+void set_zmq_loopback(bool v) { _zmq_loopback.store(v); }
+
+// Variante con timeout de 200 ms para modo ZMQ
+bool _pop_next_tx_zmq(TxSymbolsFrame& out, bool& timed_out) {
+    timed_out = false;
+    using Clock = std::chrono::steady_clock;
+    const auto deadline = Clock::now() + std::chrono::milliseconds(200);
+    SPSCBackoff backoff;
+    while (Clock::now() < deadline) {
+        if (_tx_q.try_pop(out)) return true;
+        if (_closed.load()) return false;  // cola cerrada
+        backoff.pause();
+    }
+    timed_out = true;
+    return false;   // timeout: frame TX descartado, resincronizan
+}
+
+// En pop_pair(): si hay timeout, descartar el frame RX y reintentar
+if (_zmq_loopback.load()) {
+    bool timed_out = false;
+    if (!_pop_next_tx_zmq(tx_item, timed_out)) {
+        _recycle_one(std::move(rx_item.samples));
+        if (timed_out) { have_rx = false; continue; }  // descartar RX, reiniciar
+        return false;  // cola cerrada
+    }
+}
+\end{lstlisting}
+
+\paragraph{(d) push\_zmq\_rx\_frame() — liberación al pool en caso de fallo}
+
+Cuando la cola RX está llena y el push falla, el buffer se devuelve al pool
+(en lugar de descartarse):
+
+\begin{lstlisting}[style=cpp,
+  caption={push\_zmq\_rx\_frame con liberación al pool — SensingChannel.cpp, líneas 905--916}]
+bool SensingChannel::push_zmq_rx_frame(AlignedVector&& samples, uint64_t frame_seq) {
+    RxSymbolsFrame rx_item;
+    rx_item.samples = std::move(samples);
+    rx_item.frame_seq = frame_seq;
+    if (!_rx_io.paired_queue->push_rx(std::move(rx_item))) {
+        LOG_RT_WARN_HZ(5) << "[Sensing CH " << _rx_io.logical_id
+                          << "] ZMQ RX queue full, dropping frame " << frame_seq;
+        // SPSCRingBuffer::try_push NO mueve el valor si la cola esta llena,
+        // por lo que rx_item.samples es aun valido aqui.
+        // Devolver el buffer al pool para mantener el ciclo acquire/release balanceado.
+        _rx_io.rx_frame_pool.release(std::move(rx_item.samples));
+        return false;
+    }
+    _rx_io.next_rx_frame_seq = frame_seq + 1;
+    return true;
+}
+\end{lstlisting}
+
+\subsubsection{CMakeLists.txt}
+
+Se añaden dos nuevos targets de compilación condicionales al bloque
+\texttt{if(CHANNEL\_SIM\_}\allowbreak\texttt{ZMQ\_FOUND)}:
+
+\begin{lstlisting}[style=bash,
+  caption={Nuevos targets en CMakeLists.txt}]
+# Target ChannelSimulator (canal fisico con TUI)
+add_executable(ChannelSimulator
+    channel_sim/src/ChannelSimulator.cpp
+    channel_sim/src/ZmqInterface.cpp
+    src/AsyncLogger.cpp)
+target_link_libraries(ChannelSimulator PRIVATE
+    ${ZMQ_LIBRARIES} ncurses yaml-cpp uhd fftw3f ...)
+
+# Target ChannelSimulator_void (canal transparente, sin ncurses)
+add_executable(ChannelSimulator_void
+    channel_sim/src/ChannelSimulator_void.cpp
+    channel_sim/src/ZmqInterface.cpp
+    src/AsyncLogger.cpp)
+target_link_libraries(ChannelSimulator_void PRIVATE
+    ${ZMQ_LIBRARIES} yaml-cpp uhd ...)
+\end{lstlisting}
+
+La variable de compilación \texttt{OPENISAC\_ZMQ\_SUPPORT} se define cuando ZMQ está
+disponible y se propaga a \texttt{OFDMModulator} y \texttt{OFDMDemodulator}, activando
+todas las secciones \texttt{\#ifdef OPENISAC\_ZMQ\_SUPPORT}.
+
+\subsection{Correcciones de bugs críticos detectados}
+\label{sec:bugs}
+
+Durante el desarrollo de la extensión ZMQ SIL se identificaron y corrigieron tres bugs
+críticos presentes en el código base original:
+
+\subsubsection{Bug 1: Bloqueo infinito en PairedFrameQueue (modo ZMQ)}
+
+\textbf{Descripción}: En modo ZMQ, cuando la cola TX (\texttt{PairedFrameQueue})
+se llenaba y los frames TX se descartaban, el hilo de sensing llamaba a
+\texttt{\_pop\_next\_tx()}, que gira indefinidamente esperando el siguiente frame TX.
+El frame descartado nunca llegaría, bloqueando el hilo para siempre.
+
+\textbf{Causa raíz}: \texttt{\_pop\_next\_tx()} no tiene mecanismo de timeout; fue
+diseñado para uso con hardware donde los frames TX nunca se descartan.
+
+\textbf{Solución}: Añadir \texttt{\_pop\_next\_tx\_zmq()} con timeout de 200 ms y
+activarlo con el flag \texttt{set\_zmq\_loopback(true)} en \texttt{start\_zmq\_rx()}.
+Véase el código en la Sección anterior.
+
+\subsubsection{Bug 2: Fuga de memoria de 14,7 GB en \_zmq\_sensing\_rx\_proc}
+
+\textbf{Descripción}: El proceso \texttt{OFDMModulator --zmq} terminaba
+involuntariamente $\approx 37$ segundos después del arranque, eliminado por el
+OOM killer del sistema operativo.
+
+\textbf{Causa raíz}: El hilo \texttt{\_zmq\_sensing\_rx\_proc} asignaba un nuevo
+\texttt{AlignedVector} de $\approx 921$ KB en cada frame recibido. El hilo de
+sensing lo procesaba y lo \textbf{liberaba al pool} mediante
+\texttt{rx\_frame\_pool.release()}. Sin embargo, el hilo ZMQ nunca adquiría del pool:
+solo liberaba. El pool crecía sin límite:
+
+\begin{equation}
+  16.000 \text{ frames} \times 921 \text{ KB/frame} \approx 14{,}7 \text{ GB}
+  \label{eq:mem_leak}
+\end{equation}
+
+A $\approx 434$ Hz de frame rate, la acumulación alcanza el límite de RAM en
+$\approx 37$ segundos (con 16 GB de RAM instalada).
+
+\textbf{Solución}: El hilo ZMQ ahora llama a \texttt{ch->acquire\_rx\_frame()} para
+obtener buffers preasignados del pool. El hilo de sensing los devuelve con
+\texttt{rx\_frame\_pool.release()}. El pool permanece en estado de equilibrio estacionario.
+
+\subsubsection{Bug 3: SIGTERM sin manejador registrado}
+
+\textbf{Descripción}: El proceso \texttt{OFDMModulator} terminaba silenciosamente
+(sin mensajes de error) cuando recibía una señal SIGTERM (p.ej. de \texttt{kill},
+\texttt{systemd} o \texttt{taskset}).
+
+\textbf{Causa raíz}: El código original solo registraba el handler de señal para
+SIGINT (Ctrl+C). SIGTERM usaba la acción por defecto del kernel, que termina el
+proceso inmediatamente sin ejecutar destructores ni código de limpieza.
+
+\textbf{Solución}: Añadir \texttt{std::signal(SIGTERM, \&signal\_handler)} junto a
+la ya existente línea de SIGINT.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Manual de instalación}
+
+\subsection{Dependencias del sistema}
+
+\begin{lstlisting}[style=bash, caption={Instalación de dependencias en Ubuntu 22.04+}]
+# Dependencias base de OpenISAC (igual que el repositorio original)
+sudo apt update
+sudo apt install -y \
+    cmake build-essential pkg-config \
+    libuhd-dev uhd-host \
+    libboost-all-dev \
+    libfftw3-dev \
+    libyaml-cpp-dev \
+    libncurses-dev
+
+# ZeroMQ (necesario para el modo ZMQ SIL)
+sudo apt install -y libzmq3-dev libczmq-dev
+
+# cppzmq (cabeceras C++ de ZMQ — si no está en el sistema)
+sudo apt install -y cppzmq-dev
+# Alternativa: descargar zmq.hpp de https://github.com/zeromq/cppzmq
+
+# AFF3CT (codec LDPC) — compilar desde fuentes
+git clone --recursive https://github.com/aff3ct/aff3ct.git
+cd aff3ct && mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DAFF3CT_COMPILE_SHARED_LIB=ON \
+         -DAFF3CT_COMPILE_STATIC_LIB=OFF
+make -j$(nproc)
+sudo make install && sudo ldconfig
+cd ../..
+\end{lstlisting}
+
+\subsection{Compilación}
+
+\begin{lstlisting}[style=bash, caption={Compilación del proyecto}]
+cd fork_OpenISAC
+
+# Configurar (Release con optimizaciones O2)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# Compilar todos los targets
+cmake --build build -j$(nproc)
+
+# Binarios generados en build/:
+#   OFDMModulator          — transmisor/receptor ISAC
+#   OFDMDemodulator        — demodulador (modo bistico / UE)
+#   ChannelSimulator       — canal simulado con TUI (requiere ZMQ)
+#   ChannelSimulator_void  — canal transparente   (requiere ZMQ)
+\end{lstlisting}
+
+Si ZMQ no está disponible en el sistema, \texttt{cmake} mostrará un aviso y
+omitirá los targets de canal simulado:
+\begin{lstlisting}[style=plain]
+-- ZeroMQ (libzmq + zmq.hpp) not found — ChannelSimulator will NOT be built.
+\end{lstlisting}
+
+\subsection{Configuración YAML}
+
+Copiar una de las plantillas de configuración al directorio \texttt{build/}:
+
+\begin{lstlisting}[style=bash]
+cp config/Modulator_B210.yaml build/Modulator.yaml
+# Verificar los parametros criticos:
+#   sample_rate: 50000000      (Hz) — frecuencia de muestreo
+#   center_freq: 2400000000    (Hz) — frecuencia portadora
+#   fft_size: 1024             — numero de subportadoras
+#   num_symbols: 100           — simbolos OFDM por frame
+#   cp_length: 128             — longitud del prefijo ciclico
+\end{lstlisting}
+
+Para el modo ZMQ SIL, el bloque \texttt{channel\_sim} del YAML debe estar
+\textbf{descomentado} (controla los puertos ZMQ y el puerto de control UDP):
+
+\begin{lstlisting}[style=plain, caption={Bloque channel\_sim en Modulator.yaml}]
+channel_sim:
+  control_port: 9998       # Puerto UDP para comandos de control remoto
+  buffer_size: 4096        # Tamano de buffer ZMQ (muestras)
+  zmq:
+    rx_bind_addr: "tcp://*:5558"   # ChannelSim recibe TX en este puerto
+    tx_bind_addr: "tcp://*:5559"   # ChannelSim envia RX en este puerto
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Manual de uso paso a paso}
+
+\subsection{Modo 1: Hardware real (USRP)}
+\label{sec:modo_hardware}
+
+Este es el modo de operación original de OpenISAC. Requiere hardware USRP.
+
+\begin{warnbox}[Prerrequisito hardware]
+Conectar el USRP al PC via USB3 (B210) o SFP/PCIe (X310). Verificar la conexión:
+\texttt{uhd\_find\_devices}. El USRP debe aparecer en la salida.
+\end{warnbox}
+
+\subsubsection{Terminal 1 — Configuración del sistema (una vez por sesión)}
+
+\begin{lstlisting}[style=bash]
+# Governor de CPU a performance (reduce jitter de frecuencia)
+sudo ./scripts/set_performance.bash
+
+# Aislar 6 cores para la aplicacion (OS usa solo cores 6-7)
+# Sustituir 0-5 por el rango adecuado para el procesador del sistema
+sudo ./scripts/isolate_cpus.bash 0-5
+\end{lstlisting}
+
+\subsubsection{Terminal 2 — OFDMModulator (sin flag --zmq)}
+
+\begin{lstlisting}[style=bash]
+cd build
+# Lanzar con afinidad de CPU y prioridad RT:
+sudo ../scripts/isolate_cpus.bash run ./OFDMModulator Modulator.yaml
+\end{lstlisting}
+
+El modulador se conecta al USRP, sintoniza la frecuencia y comienza a transmitir
+frames OFDM. Los datos de sensing se envían por UDP al puerto 8888.
+
+\subsubsection{Terminal 3 — Visualización}
+
+\begin{lstlisting}[style=bash]
+cd build
+python3 ../scripts/plot_sensing_fast.py
+\end{lstlisting}
+
+Se abre la ventana de visualización con el mapa Rango-Doppler en tiempo real.
+En ausencia de objetos, solo debería aparecer el bin DC (señal directa).
+
+\subsection{Modo 2: Canal transparente (ChannelSimulator\_void)}
+\label{sec:modo_void}
+
+Este modo ejecuta la cadena ISAC completa sin hardware USRP y sin efectos de canal.
+Es útil para verificar el funcionamiento del pipeline y establecer una referencia nula.
+
+\begin{warnbox}[Orden de arranque obligatorio]
+El ChannelSimulator (o \_void) debe arrancar \textbf{antes} que el OFDMModulator.
+El simulador hace \texttt{bind()} en los puertos ZMQ; el modulador hace \texttt{connect()}.
+Si se invierten, el modulador no encontrará el servidor ZMQ.
+\end{warnbox}
+
+\subsubsection{Terminal 1 — ChannelSimulator\_void}
+
+\begin{lstlisting}[style=bash]
+cd build
+./ChannelSimulator_void Modulator.yaml
+\end{lstlisting}
+
+Salida esperada:
+\begin{lstlisting}[style=plain]
+[VOID] Canal transparente iniciado
+[VOID]   RX (PULL): tcp://*:5558
+[VOID]   TX (PUSH): tcp://*:5559
+[VOID]   Buffer:    115200 muestras
+[VOID] Ctrl+C para salir.
+
+[VOID] Tramas retransmitidas: 1000
+[VOID] Tramas retransmitidas: 2000
+...
+\end{lstlisting}
+
+\subsubsection{Terminal 2 — OFDMModulator en modo ZMQ}
+
+\begin{lstlisting}[style=bash]
+cd build
+./OFDMModulator --zmq Modulator.yaml
+\end{lstlisting}
+
+\subsubsection{Terminal 3 — Visualización}
+
+\begin{lstlisting}[style=bash]
+cd build
+python3 ../scripts/plot_sensing_fast.py
+\end{lstlisting}
+
+\begin{infobox}[Resultado esperado — canal void]
+El mapa Rango-Doppler \textbf{no debe mostrar picos de alta amplitud}
+fuera del bin (rango=0, Doppler=0). Este resultado confirma que:
+\begin{enumerate}
+  \item El pipeline ZMQ funciona correctamente de extremo a extremo.
+  \item No existen artefactos introducidos por el software de simulación.
+  \item Cualquier pico que aparezca en los experimentos con canal simulado
+        es atribuible exclusivamente al modelo de canal.
+\end{enumerate}
+\end{infobox}
+
+\subsubsection{Parada limpia}
+
+\begin{enumerate}
+  \item Ctrl+C en Terminal 2 (OFDMModulator).
+  \item Ctrl+C en Terminal 1 (ChannelSimulator\_void).
+\end{enumerate}
+
+\subsection{Modo 3: Canal simulado con efectos físicos (ChannelSimulator)}
+\label{sec:modo_channel}
+
+Este modo simula un canal radar monostático completo con los efectos físicos
+descritos en la Sección~\ref{sec:canal}. Los parámetros se controlan en tiempo
+real mediante la TUI ncurses.
+
+\subsubsection{Terminal 1 — ChannelSimulator (con TUI)}
+
+\begin{lstlisting}[style=bash]
+cd build
+./ChannelSimulator Modulator.yaml
+\end{lstlisting}
+
+Se abre la interfaz TUI ncurses. Para prioridad RT (hilo de señal en SCHED\_FIFO/80):
+
+\begin{lstlisting}[style=bash]
+sudo ./ChannelSimulator Modulator.yaml
+\end{lstlisting}
+
+\subsubsection{Terminal 2 — OFDMModulator en modo ZMQ}
+
+\begin{lstlisting}[style=bash]
+cd build
+./OFDMModulator --zmq Modulator.yaml
+# Para watchdog automatico (recomendado para sesiones largas):
+sudo ../scripts/run_modulator.bash
+\end{lstlisting}
+
+\subsubsection{Terminal 3 — Visualización}
+
+\begin{lstlisting}[style=bash]
+cd build
+python3 ../scripts/plot_sensing_fast.py
+\end{lstlisting}
+
+\subsubsection{Uso de la TUI ncurses}
+
+\begin{center}
+\begin{lstlisting}[style=plain]
+ CHANNEL SIMULATOR — PANEL DE CONTROL     SR:50MHz  Fc:2.400GHz
+ Parametro               Valor              Paso
+─────────────────────────────────────────────────────────────────
+ SISTEMA
+   Potencia TX          0.000 dB          1
+   Ganancia RX          0.000 dB          1
+   Ruido AWGN         -60.000 dB          5
+   Tipo de antena      Omnidireccional
+   Targets             1
+
+ TARGET 1
+ > Distancia           25.000 m           10
+   Velocidad           10.000 m/s         5
+   MicroDop. Amp        0.000 rad         0.01
+   MicroDop. Freq      10.000 Hz          1
+   RCS                  1.000 m2          0.5
+
+─────────────────────────────────────────────────────────────────
+ up/dn Navegar | +/- <- -> Valor | j/k Paso x0.5/x2 | Q Salir
+\end{lstlisting}
+\end{center}
+
+\begin{center}
+\begin{tabularx}{0.85\linewidth}{lX}
+\toprule
+\textbf{Tecla} & \textbf{Acción} \\
+\midrule
+$\uparrow$ / $\downarrow$ & Navegar entre parámetros \\
+$\rightarrow$ / \texttt{+} / \texttt{=} & Incrementar valor en un paso \\
+$\leftarrow$ / \texttt{-} & Decrementar valor en un paso \\
+\texttt{j} & Paso $\div 2$ (ajuste más fino) \\
+\texttt{k} & Paso $\times 2$ (ajuste más grueso) \\
+\texttt{Q} & Salir limpiamente del ChannelSimulator \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsubsection{Experimentos sugeridos}
+
+\textbf{Experimento 1 — Target estático} (verificación de rango):
+\begin{enumerate}
+  \item Configurar: Targets=1, Distancia=100 m, Velocidad=0 m/s, RCS=1 m².
+  \item En el mapa Rango-Doppler, debe aparecer un pico en el bin de rango
+        correspondiente a $d = \lfloor 2 \times 100 / c \times f_s \rceil$
+        y en el bin Doppler=0.
+  \item Variar la distancia con las flechas: el pico debe desplazarse en el eje de rango.
+\end{enumerate}
+
+\textbf{Experimento 2 — Target con velocidad} (verificación Doppler):
+\begin{enumerate}
+  \item Configurar: Targets=1, Distancia=50 m, Velocidad=20 m/s, RCS=5 m².
+  \item El pico debe aparecer desplazado en el eje Doppler:
+        $f_d = 2 \times 20 \times f_c / c$ Hz.
+  \item Cambiar el signo de la velocidad: el pico debe saltar al lado opuesto.
+\end{enumerate}
+
+\textbf{Experimento 3 — Micro-Doppler} (verificación de firma):
+\begin{enumerate}
+  \item Configurar: Targets=1, Dist=50 m, Vel=15 m/s, MicroDop.Amp=0.3 rad,
+        MicroDop.Freq=25 Hz.
+  \item En la dimensión Doppler, deben aparecer \textit{sidebands} simétricas
+        a $\pm k \times 25$ Hz del Doppler principal.
+  \item El número y amplitud de sidebands depende de la amplitud $A_m$
+        (expansión en series de Bessel de la modulación PM).
+\end{enumerate}
+
+\textbf{Experimento 4 — Antena directiva} (verificación de beam pattern):
+\begin{enumerate}
+  \item Configurar: Tipo antena = Directiva, Ancho haz = 20°,
+        Target1: Dist=50 m, Vel=20 m/s, Ángulo=0° (on-boresight).
+  \item Registrar la amplitud del pico.
+  \item Aumentar el ángulo a 10°: la amplitud debe caer a $\approx -3$ dB.
+  \item Aumentar a 20°: la amplitud debe caer a $\approx -12$ dB.
+\end{enumerate}
+
+\textbf{Experimento 5 — Múltiples targets}:
+\begin{enumerate}
+  \item Configurar: Targets=3, Target1: 50 m / 20 m/s,
+        Target2: 150 m / −10 m/s, Target3: 300 m / 5 m/s.
+  \item Deben aparecer tres picos distintos en el mapa Rango-Doppler,
+        cada uno en la celda (rango, Doppler) correspondiente.
+\end{enumerate}
+
+\textbf{Experimento 6 — Degradación por ruido}:
+\begin{enumerate}
+  \item Configurar un target visible. Subir \textit{Ruido AWGN}
+        desde $-60$ dB hacia $0$ dB.
+  \item El pico del target debe ir desapareciendo progresivamente en el suelo de ruido.
+  \item La SNR en el mapa Rango-Doppler: $\text{SNR}_{RD} \approx
+        A_\text{eco}^2 / (2\sigma_n^2) \times N_r \times N_d$
+        donde $N_r$ y $N_d$ son los tamaños de las FFT de rango y Doppler.
+\end{enumerate}
+
+\subsection{Control remoto por UDP (opcional)}
+
+El \texttt{ChannelSimulator} acepta comandos en el puerto \texttt{control\_port} (9998
+por defecto) para automatizar cambios de parámetros desde scripts:
+
+\begin{lstlisting}[style=bash, caption={Ejemplos de control UDP desde Python}]
+python3 - <<'EOF'
+import socket, struct
+
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Cambiar velocidad del Target 1 a 30.5 m/s  (valor = vel * 100 = 3050)
+s.sendto(b'VEL ' + struct.pack('>i', 3050), ('127.0.0.1', 9998))
+
+# Cambiar distancia a 200.0 m  (valor = dist * 10 = 2000)
+s.sendto(b'DIST' + struct.pack('>i', 2000), ('127.0.0.1', 9998))
+
+# Activar micro-Doppler: amp=0.3 rad (valor = amp * 10000 = 3000)
+s.sendto(b'MDAF' + struct.pack('>i', 3000), ('127.0.0.1', 9998))
+
+# Frecuencia micro-Doppler: 25 Hz (valor = freq * 100 = 2500)
+s.sendto(b'MDFF' + struct.pack('>i', 2500), ('127.0.0.1', 9998))
+EOF
+\end{lstlisting}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Rendimiento y optimizaciones en tiempo real}
+
+\subsection{Tabla de ruido precalculada}
+
+El generador estándar \texttt{std::normal\_distribution} con \texttt{mt19937} tiene
+un coste de $\approx 15$ ns/muestra. Para un frame de $N_\text{sym} = 100$ símbolos
+OFDM con $N_\text{FFT} + N_\text{CP} = 1024 + 128 = 1152$ muestras/símbolo, el frame
+tiene $115\,200$ muestras × 2 (I/Q) = $230\,400$ valores Gaussianos:
+
+\[
+  T_\text{RNG} \approx 230\,400 \times 15 \text{ ns} = 3{,}5 \text{ ms}
+\]
+
+El periodo de frame a $f_s = 50$ MHz es:
+\[
+  T_\text{frame} = 115\,200 / 50 \times 10^6 = 2{,}3 \text{ ms}
+\]
+
+Por tanto, el generador estándar consumiría $>100\%$ del presupuesto de tiempo de
+un frame, haciendo imposible la ejecución en tiempo real.
+
+La tabla precalculada de $2^{17}$ muestras Gaussianas (512 KB) permite accesos a
+$\approx 2$ ns/muestra (caché L3), reduciendo $T_\text{RNG} < 0{,}5$ ms, equivalente
+al $\approx 20\%$ del presupuesto de frame.
+
+\subsection{Fasor Doppler incremental}
+
+La multiplicación compleja de rotación es $\approx 4$ operaciones FP (2 mul + 2 add),
+con latencia $\approx 4$ ns en hardware x86 moderno. La alternativa (\texttt{cos}/\texttt{sin}
+por muestra) tiene latencia $\approx 10-15$ ns. El ahorro total por frame (3 targets):
+\[
+  (15 - 4) \text{ ns} \times 115\,200 \text{ muestras} \times 3 \text{ targets}
+  \approx 3{,}8 \text{ ms}
+\]
+
+\subsection{Hilo de señal con prioridad RT}
+
+El hilo \texttt{signal\_loop} (canal de señal) se ejecuta con política
+\texttt{SCHED\_FIFO} y prioridad 80 cuando se lanza con \texttt{sudo},
+garantizando que no sea desalojado por procesos del sistema operativo
+durante el procesado de un frame.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resolución de problemas}
+
+{\small
+\begin{tabularx}{\linewidth}{p{4.8cm}X}
+\toprule
+\textbf{Síntoma} & \textbf{Causa / Solución} \\
+\midrule
+\texttt{Cannot load config: Modulator.yaml} &
+  El binario busca el YAML en el directorio de trabajo.
+  Ejecutar desde \texttt{build/} o pasar la ruta explícita:
+  \texttt{./OFDMModulator --zmq ../build/Modulator.yaml} \\
+\addlinespace
+El modulador termina $\approx$ 37 s después de arrancar &
+  Bug de fuga de memoria corregido en esta extensión.
+  Recompilar desde el repositorio actualizado. \\
+\addlinespace
+Seq mismatch / drop de frames al inicio &
+  El ChannelSimulator no ha arrancado antes que el modulador.
+  Reiniciar en el orden correcto. \\
+\addlinespace
+Mapa Rango-Doppler sin pico de target &
+  Verificar: \texttt{num\_targets $\geq$ 1} en la TUI,
+  \texttt{tx\_power\_db} y \texttt{rcs} $> 0$,
+  \texttt{noise\_power\_db} $\leq -40$ dB. \\
+\addlinespace
+TUI con caracteres extraños &
+  Verificar locale UTF-8: \texttt{echo \$LANG}
+  (debe mostrar \texttt{es\_ES.UTF-8} o \texttt{en\_US.UTF-8}). \\
+\addlinespace
+\texttt{[WARN] Sin prioridad RT} &
+  Lanzar \texttt{ChannelSimulator} con \texttt{sudo} para
+  activar \texttt{SCHED\_FIFO/80} en el hilo de señal. \\
+\addlinespace
+\texttt{ZMQ error: ETERM} &
+  El contexto ZMQ se ha destruido (normal en apagado).
+  No es un error: indica salida limpia del hilo de recepción. \\
+\addlinespace
+\texttt{OFDMModulator --zmq} termina nada más arrancar &
+  El ChannelSimulator no ha arrancado aún. El socket TX
+  (PUSH + HWM=4 + sndtimeo=500 ms) descarta frames si
+  no hay receptor. Arrancar el canal primero. \\
+\bottomrule
+\end{tabularx}
+}% end \small
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Resumen de todos los cambios frente al repositorio original}
+
+\begin{tabularx}{\linewidth}{p{5.5cm}lX}
+\toprule
+\textbf{Archivo} & \textbf{Tipo} & \textbf{Cambio} \\
+\midrule
+\nolinkurl{channel_sim/src/ChannelSimulator.cpp}      & Nuevo & Canal físico: retardo, Doppler, micro-Doppler, ec. radar, AWGN, TUI \\
+\nolinkurl{channel_sim/src/ChannelSimulator_void.cpp} & Nuevo & Canal transparente (referencia nula) \\
+\nolinkurl{channel_sim/include/ChannelParams.hpp}     & Nuevo & Parámetros del canal (atómicos, thread-safe) \\
+\nolinkurl{channel_sim/src/ZmqInterface.cpp}          & Nuevo & Interfaz ZMQ PUSH/PULL (BIND en 5558/5559) \\
+\nolinkurl{channel_sim/include/ZmqInterface.hpp}      & Nuevo & Cabecera de ZmqInterface y ZmqChannelSimConfig \\
+\nolinkurl{scripts/run_modulator.bash}                & Nuevo & Watchdog: reinicio automático del modulador \\
+\midrule
+\nolinkurl{src/OFDMModulator.cpp} & Modificado &
+  (1) Flag \texttt{--zmq} en CLI;
+  (2) Inicialización ZMQ en lugar de USRP;
+  (3) Hilo \texttt{\_zmq\_sensing\_rx\_proc};
+  (4) Pacing temporal TX;
+  (5) Guard de underflow modo ZMQ;
+  (6) SIGTERM registrado;
+  (7) Fix fuga de memoria: \texttt{acquire\_rx\_frame()} \\
+\addlinespace
+\nolinkurl{src/SensingChannel.cpp} & Modificado &
+  (1) Método \texttt{start\_zmq\_rx()};
+  (2) Método \texttt{push\_zmq\_rx\_frame()};
+  (3) \texttt{acquire\_rx\_frame()} / \texttt{release\_rx\_frame()};
+  (4) \texttt{PairedFrameQueue}: timeout ZMQ loopback;
+  (5) Fix liberación al pool en push fallido \\
+\addlinespace
+\nolinkurl{include/SensingChannel.hpp} & Modificado &
+  Declaraciones de \texttt{start\_zmq\_rx()}, \texttt{push\_zmq\_rx\_frame()},
+  \texttt{acquire\_rx\_frame()}, \texttt{release\_rx\_frame()} \\
+\addlinespace
+\nolinkurl{CMakeLists.txt} & Modificado &
+  Targets \texttt{ChannelSimulator} y \texttt{ChannelSimulator\_void};
+  define \texttt{OPENISAC\_ZMQ\_SUPPORT} \\
+\addlinespace
+\nolinkurl{scripts/*.bash} & Modificado &
+  Conversión CRLF $\rightarrow$ LF (scripts inejecutables en Linux original) \\
+\bottomrule
+\end{tabularx}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\vfill
+\begin{center}
+\rule{0.6\linewidth}{0.4pt}\\[0.5em]
+{\small\color{codegray}
+  \textbf{OpenISAC ZMQ SIL Extension} —
+  Basado en el proyecto OpenISAC original (GitHub).\\
+  Documento de referencia para publicación en congreso ISAC.\\
+  Generado con XeLaTeX · fork\_OpenISAC · Mayo 2026.
+}
+\end{center}
+
+\end{document}

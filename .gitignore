@@ -1,0 +1,42 @@
+# ── Artefactos de compilación ──────────────────────────────────────────────
+build/OFDMModulator
+build/OFDMDemodulator
+build/ChannelSimulator
+build/ChannelSimulator_void
+build/CMakeCache.txt
+build/CMakeFiles/
+build/cmake_install.cmake
+build/Makefile
+build/_deps/
+build/*.a
+build/*.so
+build/*.o
+
+# ── LaTeX auxiliares ────────────────────────────────────────────────────────
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.synctex.gz
+# El PDF lo SÍ incluimos (útil para que el supervisor lo vea en GitHub)
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── FFTW wisdom (local a la máquina, no portable) ───────────────────────────
+fftw_wisdom.dat
+build/fftw_wisdom.dat
